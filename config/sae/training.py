@@ -85,6 +85,18 @@ tiny_defaults = {
     "min_lr": 1e-4,
 }
 
+mess3_defaults = {
+    "data_dir": "data/mess3/mess3_x_15_a_2_b_12_json_output",
+    "eval_interval": 100,
+    "eval_steps": 50,
+    "batch_size": 64,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 1e-3,
+    "max_steps": 10000,
+    "decay_lr": True,
+    "min_lr": 1e-4,
+}
+
 
 # Training configuration options
 options: dict[str, SAETrainingConfig] = map_options(
@@ -316,6 +328,14 @@ options: dict[str, SAETrainingConfig] = map_options(
             sparsity=(0.002, 0.10, 0.16, 0.005, 0.005),
             downstream=1.0,
             bandwidth=0.1,
+        ),
+    ),
+    SAETrainingConfig(
+        name="jsae_block.mess3_12_64x1_2feat_dense",
+        sae_config=sae_options["jsae_block.mess3_12_64x1_2feat"],
+        **mess3_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.0,),  # One coefficient per layer (zero Jacobian coefficient)
         ),
     ),
 )

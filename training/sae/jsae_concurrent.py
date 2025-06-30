@@ -50,6 +50,10 @@ class JSaeTrainer(ConcurrentTrainer):
     def raw_jacobian_losses(self, output: SparsifiedGPTOutput, is_eval: bool= False) -> torch.Tensor:
         device = output.sae_losses.device
         jacobian_losses = torch.zeros(len(self.model.layer_idxs), device=device)
+        
+        # Early return if all sparsity coefficients are zero - no Jacobian computation needed
+        if all(coeff == 0.0 for coeff in self.model.loss_coefficients.sparsity):
+            return jacobian_losses  # Return zeros without expensive computation
          
         for layer_idx in self.model.layer_idxs:
             key = self.model.sae_keys[layer_idx]

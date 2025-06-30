@@ -307,4 +307,12 @@ sae_options: dict[str, SAEConfig] = map_options(
         sae_variant=SAEVariant.JUMP_RELU,
         sae_keys=gen_sae_keys(n_features=5),
     ),
+    SAEConfig(
+        name="jsae_block.mess3_12_64x1_2feat",
+        gpt_config=gpt_options["mess3_12_64x1"],
+        n_features=(2, 2),
+        sae_variant=SAEVariant.JSAE_BLOCK,
+        top_k=(2, 2),  # TopK parameter required for JSAE_BLOCK (using TopKSAE)
+        sae_keys=("0_residmid", "0_residpost"),
+    ),
 )
