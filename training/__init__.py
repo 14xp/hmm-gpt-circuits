@@ -181,6 +181,10 @@ class Trainer:
         # Set the float32 matmul precision to high for better performance.
         torch.set_float32_matmul_precision("high")
 
+        # Save initial checkpoint (step 0)
+        if self.config.checkpoint_interval is not None:
+            self.save_periodic_checkpoint(self.unwrapped_model, 0)
+
         # Let's see what we're starting with.
         self.val_step(0)
 
@@ -192,6 +196,10 @@ class Trainer:
             last_step = step == self.config.max_steps
             if step % self.config.eval_interval == 0 or last_step:
                 self.val_step(step)
+        
+        # Save final checkpoint after training completes
+        if self.config.checkpoint_interval is not None:
+            self.save_periodic_checkpoint(self.unwrapped_model, self.config.max_steps)
 
     @torch.no_grad()
     def val_step(self, step, should_log=True) -> dict[str, torch.Tensor]:
@@ -302,6 +310,11 @@ class Trainer:
                 },
                 self.LogDestination.TRAIN,
             )
+            
+        # Save periodic checkpoint
+        if (self.config.checkpoint_interval is not None 
+            and step % self.config.checkpoint_interval == 0):
+            self.save_periodic_checkpoint(self.unwrapped_model, step)
 
     def backward(self, loss):
         """
@@ -323,6 +336,20 @@ class Trainer:
         :param is_best: A tensor comparing the current loss to the best loss.
         """
         model.save(self.config.out_dir)
+    
+    def save_periodic_checkpoint(self, model, step: int):
+        """
+        Save model weights at periodic intervals.
+
+        :param model: The model to save.
+        :param step: The training step number.
+        """
+        if self.is_main_process:
+            # Create checkpoint directory with step number
+            checkpoint_dir = self.config.out_dir / f"checkpoint_step_{step}"
+            
+            # Use model's save method to create model.safetensors and model.json
+            model.save(checkpoint_dir)
 
     def log(self, data: dict, destination: LogDestination):
         """

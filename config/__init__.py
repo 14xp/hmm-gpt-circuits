@@ -35,6 +35,9 @@ class TrainingConfig(Config):
     min_lr: float = 0  # Minimum learning rate
     weight_decay: float = 0.1
     grad_clip: Optional[float] = 1.0  # Maximum gradient norm
+    
+    # Checkpointing parameters
+    checkpoint_interval: Optional[int] = 1000  # Save checkpoint every N steps
 
     @property
     def out_dir(self) -> Path:
