@@ -6,6 +6,7 @@ david_checkpoint/
 img/
 attributions/
 *.npy
+*.json
 
 # Node app
 app/build/
@@ -24,6 +25,7 @@ __pycache__/
 
 # Virtual environment
 .venv/
+venv/
 
 # Xavier 
 myenv/
@@ -33,3 +35,9 @@ xavier/experiments/plots/
 
 # David
 wandb/*
+
+# Figures
+*.png
+*.jpg
+*.jpeg
+*.svg

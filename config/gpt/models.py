@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from config import Config, map_options
-from data.tokenizers import ASCIITokenizer, TikTokenTokenizer, Tokenizer
+from data.tokenizers import ASCIITokenizer, TikTokenTokenizer, Tokenizer, IntegerTokenizer
 
 
 class NormalizationStrategy(str, Enum):
@@ -33,7 +33,8 @@ class GPTConfig(Config):
             case ASCIITokenizer.vocab_size:
                 return ASCIITokenizer()
             case _:
-                raise ValueError(f"Unrecognized vocab size: {self.vocab_size}")
+                # For any other vocab size, assume it's an integer tokenizer
+                return IntegerTokenizer(self.vocab_size)
 
     @staticmethod
     def dict_factory(fields: list) -> dict:
@@ -96,5 +97,13 @@ gpt_options: dict[str, GPTConfig] = map_options(
         n_layer=4,
         n_head=16,
         n_embd=256,
+    ),
+    GPTConfig(
+        name="mess3_12_64x1",
+        block_size=12,
+        vocab_size=4,
+        n_layer=1,
+        n_head=1,
+        n_embd=64,
     ),
 )#type: ignore

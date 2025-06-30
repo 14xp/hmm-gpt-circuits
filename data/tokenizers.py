@@ -3,7 +3,7 @@ This module contains classes for tokenizing text.
 """
 
 from enum import Enum
-from typing import Protocol, Literal
+from typing import Protocol
 
 import tiktoken
 
@@ -15,15 +15,21 @@ class TokenizerType(str, Enum):
 
     TIKTOKEN = "tiktoken"
     ASCII = "ascii"
+    INTEGER = "integer"
 
-    def as_tokenizer(self) -> "Tokenizer":
+    def as_tokenizer(self, vocab_size: int = None) -> "Tokenizer":
         """
         Returns the tokenizer corresponding to this type.
+        For INTEGER type, vocab_size must be provided.
         """
         if self == TokenizerType.TIKTOKEN:
             return TikTokenTokenizer()
         elif self == TokenizerType.ASCII:
             return ASCIITokenizer()
+        elif self == TokenizerType.INTEGER:
+            if vocab_size is None:
+                raise ValueError("vocab_size must be provided for INTEGER tokenizer")
+            return IntegerTokenizer(vocab_size)
         else:
             raise ValueError(f"Invalid tokenizer type: {self}")
 
@@ -35,7 +41,6 @@ class Tokenizer(Protocol):
 
     # The size of the vocabulary.
     vocab_size: int
-    padding_side : Literal["left", "right"] = "right"
 
     def encode(self, text) -> list[int]:
         """
@@ -99,3 +104,59 @@ class ASCIITokenizer(Tokenizer):
 
     def decode_token(self, token: int) -> str:
         return chr(token)
+
+
+class IntegerTokenizer(Tokenizer):
+    """
+    Tokenizer for data that is already tokenized as integers.
+    This is a pass-through tokenizer that expects input to already be a list of integers.
+    """
+
+    def __init__(self, vocab_size: int):
+        """
+        Initialize the tokenizer with a specific vocabulary size.
+        
+        Args:
+            vocab_size: The number of distinct tokens in the vocabulary
+        """
+        if vocab_size <= 0:
+            raise ValueError("vocab_size must be positive")
+        self.vocab_size = vocab_size
+
+    def encode(self, tokens) -> list[int]:
+        """
+        Pass-through encoding for integer sequences.
+        
+        Args:
+            tokens: Either a list of integers or a single integer sequence
+            
+        Returns:
+            List of token IDs, validated to be within vocab_size
+        """
+        if isinstance(tokens, int):
+            tokens = [tokens]
+        elif isinstance(tokens, str):
+            raise ValueError("IntegerTokenizer expects integer input, not strings. Use encode_sequence for lists.")
+        
+        # Validate that all tokens are within vocabulary bounds
+        for token in tokens:
+            if not isinstance(token, int):
+                raise ValueError(f"All tokens must be integers, got {type(token)}")
+            if token < 0 or token >= self.vocab_size:
+                raise ValueError(f"Token {token} is out of vocabulary bounds [0, {self.vocab_size})")
+        
+        return list(tokens)
+
+    def decode_sequence(self, tokens: list[int]) -> str:
+        """
+        Convert a list of token IDs to a string representation.
+        """
+        return " ".join([str(token) for token in tokens])
+
+    def decode_token(self, token: int) -> str:
+        """
+        Convert a single token ID to a string representation.
+        """
+        if token < 0 or token >= self.vocab_size:
+            return f"<UNK:{token}>"
+        return str(token)
