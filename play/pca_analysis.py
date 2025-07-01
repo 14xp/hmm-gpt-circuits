@@ -456,7 +456,7 @@ def main():
     
     # Fix variables
     block_size = 12  # Total length including BOS token
-    model_path = "checkpoints/mess3_12_64x1/checkpoint_step_0"
+    model_path = "checkpoints/mess3_12_64x1/checkpoint_step_10000"
 
     # Set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

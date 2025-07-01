@@ -139,8 +139,6 @@ def capture_sae_activations(gpt_model: GPT, sae_weights: Tuple[Dict, Dict],
         # Convert sequences to tensor
         input_ids = torch.tensor(batch_sequences, device=device)
         
-        # FIX THIS -- there is functionality to call SAE encoders directly
-        ########################
         with torch.no_grad():
             # Manual forward pass to capture activations at hook points
             B, T = input_ids.size()
@@ -166,9 +164,9 @@ def capture_sae_activations(gpt_model: GPT, sae_weights: Tuple[Dict, Dict],
                     resid_post = x
         
         # Apply SAE encoders to get 2D latent features
-        # Remove BOS tokens and final tokens for processing
-        resid_mid_processed = resid_mid[:, 1:-1, :]  # Shape: (batch, seq_len-2, d_model)
-        resid_post_processed = resid_post[:, 1:-1, :]  # Shape: (batch, seq_len-2, d_model)
+        # Use all sequence values
+        resid_mid_processed = resid_mid  # Shape: (batch, seq_len, d_model)
+        resid_post_processed = resid_post  # Shape: (batch, seq_len, d_model)
         
         # Flatten over sequence dimension
         resid_mid_flat = resid_mid_processed.reshape(-1, resid_mid_processed.size(-1))
@@ -177,20 +175,19 @@ def capture_sae_activations(gpt_model: GPT, sae_weights: Tuple[Dict, Dict],
         # Apply SAE encoders (assuming they have W_enc and b_enc)
         # SAE.0 (constrained belief states)
         if 'W_enc' in sae_0_weights and 'b_enc' in sae_0_weights:
-            sae_0_features = (resid_mid_flat - sae_0_weights.get('b_dec', 0)) @ sae_0_weights['W_enc'] + sae_0_weights['b_enc']
+            sae_0_features = F.relu((resid_mid_flat - sae_0_weights.get('b_dec', 0)) @ sae_0_weights['W_enc'] + sae_0_weights['b_enc'])
         else:
             # Fallback: use decoder weights transposed
             W_enc_0 = sae_0_weights['W_dec'].T
-            sae_0_features = resid_mid_flat @ W_enc_0
+            sae_0_features = F.relu(resid_mid_flat @ W_enc_0)
         
         # SAE.1 (regular belief states)  
         if 'W_enc' in sae_1_weights and 'b_enc' in sae_1_weights:
-            sae_1_features = (resid_post_flat - sae_1_weights.get('b_dec', 0)) @ sae_1_weights['W_enc'] + sae_1_weights['b_enc']
+            sae_1_features = F.relu((resid_post_flat - sae_1_weights.get('b_dec', 0)) @ sae_1_weights['W_enc'] + sae_1_weights['b_enc'])
         else:
             # Fallback: use decoder weights transposed
             W_enc_1 = sae_1_weights['W_dec'].T
-            sae_1_features = resid_post_flat @ W_enc_1
-        ########################
+            sae_1_features = F.relu(resid_post_flat @ W_enc_1)
         
         all_sae_0_activations.append(sae_0_features.cpu().numpy())
         all_sae_1_activations.append(sae_1_features.cpu().numpy())
@@ -235,13 +232,17 @@ def compute_constrained_belief_projections(sequences: List[List[int]]) -> np.nda
         current_belief = initial_belief.copy()
         sequence_beliefs = []
         
-        # Process each observation in the sequence (skip BOS token and final token)
-        for pos in range(1, len(sequence) - 1):
+        # Process each position in the sequence (including BOS and final tokens)
+        for pos in range(len(sequence)):
             observation = sequence[pos]
             
-            # Update belief using constrained belief update
-            current_belief = constrained_belief_update(transition_matrix, observation, current_belief, initial_belief)
-            sequence_beliefs.append(current_belief.copy())
+            # For BOS tokens (value 3), don't update belief state, just append current belief
+            if observation == 3:
+                sequence_beliefs.append(current_belief.copy())
+            else:
+                # Update belief using constrained belief update
+                current_belief = constrained_belief_update(transition_matrix, observation, current_belief, initial_belief)
+                sequence_beliefs.append(current_belief.copy())
         
         all_belief_states.extend(sequence_beliefs)
     
@@ -284,13 +285,17 @@ def compute_regular_belief_projections(sequences: List[List[int]]) -> np.ndarray
         current_belief = initial_belief.copy()
         sequence_beliefs = []
         
-        # Process each observation in the sequence (skip BOS token and final token)
-        for pos in range(1, len(sequence) - 1):
+        # Process each position in the sequence (including BOS and final tokens)
+        for pos in range(len(sequence)):
             observation = sequence[pos]
             
-            # Update belief using regular belief update
-            current_belief = belief_update(transition_matrix, observation, current_belief)
-            sequence_beliefs.append(current_belief.copy())
+            # For BOS tokens (value 3), don't update belief state, just append current belief
+            if observation == 3:
+                sequence_beliefs.append(current_belief.copy())
+            else:
+                # Update belief using regular belief update
+                current_belief = belief_update(transition_matrix, observation, current_belief)
+                sequence_beliefs.append(current_belief.copy())
         
         all_belief_states.extend(sequence_beliefs)
     
@@ -360,19 +365,27 @@ def create_comparison_plots(sae_0_coords: np.ndarray, sae_1_coords: np.ndarray,
     constrained_belief_states = []
     for sequence in sequences:
         current_belief = initial_belief.copy()
-        for pos in range(1, len(sequence) - 1):
+        for pos in range(len(sequence)):
             observation = sequence[pos]
-            current_belief = constrained_belief_update(transition_matrix, observation, current_belief, initial_belief)
-            constrained_belief_states.append(current_belief.copy())
+            # For BOS tokens (value 3), don't update belief state, just append current belief
+            if observation == 3:
+                constrained_belief_states.append(current_belief.copy())
+            else:
+                current_belief = constrained_belief_update(transition_matrix, observation, current_belief, initial_belief)
+                constrained_belief_states.append(current_belief.copy())
     
     # Compute regular belief states for coloring
     regular_belief_states = []
     for sequence in sequences:
         current_belief = initial_belief.copy()
-        for pos in range(1, len(sequence) - 1):
+        for pos in range(len(sequence)):
             observation = sequence[pos]
-            current_belief = belief_update(transition_matrix, observation, current_belief)
-            regular_belief_states.append(current_belief.copy())
+            # For BOS tokens (value 3), don't update belief state, just append current belief
+            if observation == 3:
+                regular_belief_states.append(current_belief.copy())
+            else:
+                current_belief = belief_update(transition_matrix, observation, current_belief)
+                regular_belief_states.append(current_belief.copy())
     
     constrained_colors = np.array(constrained_belief_states)
     regular_colors = np.array(regular_belief_states)
@@ -430,6 +443,87 @@ def create_comparison_plots(sae_0_coords: np.ndarray, sae_1_coords: np.ndarray,
     plt.show()
 
 
+def create_position_colored_plots(sae_0_coords: np.ndarray, sae_1_coords: np.ndarray,
+                                 constrained_proj: np.ndarray, regular_proj: np.ndarray,
+                                 sequences: List[List[int]]):
+    """
+    Create comparison plots showing SAE activations vs theoretical projections,
+    colored by sequence position.
+    
+    Args:
+        sae_0_coords: SAE.0 feature coordinates
+        sae_1_coords: SAE.1 feature coordinates  
+        constrained_proj: Constrained belief state projections
+        regular_proj: Regular belief state projections
+        sequences: Original sequences for position mapping
+    """
+    print("Creating position-colored comparison plots...")
+    
+    # Create position labels for coloring
+    position_labels = []
+    for sequence in sequences:
+        for pos in range(len(sequence)):
+            position_labels.append(pos)
+    
+    position_colors = np.array(position_labels)
+    
+    # Create four-panel plot
+    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
+    
+    scatter_params = {'alpha': 0.7, 's': 8, 'edgecolors': 'black', 'linewidth': 0.05}
+    
+    # Panel (0,0): SAE.0 activations
+    scatter1 = axes[0, 0].scatter(sae_0_coords[:, 0], sae_0_coords[:, 1], 
+                                 c=position_colors, cmap='viridis', **scatter_params)
+    axes[0, 0].set_title('SAE.0 Latent Activations\n(resid_mid → constrained belief states)', fontsize=12)
+    axes[0, 0].set_xlabel('SAE.0 Feature 1', fontsize=10)
+    axes[0, 0].set_ylabel('SAE.0 Feature 2', fontsize=10)
+    axes[0, 0].grid(True, alpha=0.3)
+    plt.colorbar(scatter1, ax=axes[0, 0], label='Sequence Position')
+    
+    # Panel (0,1): Constrained belief state projections
+    scatter2 = axes[0, 1].scatter(constrained_proj[:, 0], constrained_proj[:, 1],
+                                 c=position_colors, cmap='viridis', **scatter_params)
+    axes[0, 1].set_title('Theoretical: Constrained Belief States\n(Uniform-Centered Projection)', fontsize=12)
+    axes[0, 1].set_xlabel('First Coordinate (tangent to 2-simplex)', fontsize=10)
+    axes[0, 1].set_ylabel('Second Coordinate (tangent to 2-simplex)', fontsize=10)
+    axes[0, 1].grid(True, alpha=0.3)
+    plt.colorbar(scatter2, ax=axes[0, 1], label='Sequence Position')
+    
+    # Panel (1,0): SAE.1 activations
+    scatter3 = axes[1, 0].scatter(sae_1_coords[:, 0], sae_1_coords[:, 1],
+                                 c=position_colors, cmap='viridis', **scatter_params)
+    axes[1, 0].set_title('SAE.1 Latent Activations\n(resid_post → regular belief states)', fontsize=12)
+    axes[1, 0].set_xlabel('SAE.1 Feature 1', fontsize=10)
+    axes[1, 0].set_ylabel('SAE.1 Feature 2', fontsize=10)
+    axes[1, 0].grid(True, alpha=0.3)
+    plt.colorbar(scatter3, ax=axes[1, 0], label='Sequence Position')
+    
+    # Panel (1,1): Regular belief state projections
+    scatter4 = axes[1, 1].scatter(regular_proj[:, 0], regular_proj[:, 1],
+                                 c=position_colors, cmap='viridis', **scatter_params)
+    axes[1, 1].set_title('Theoretical: Regular Belief States\n(Uniform-Centered Projection)', fontsize=12)
+    axes[1, 1].set_xlabel('First Coordinate (tangent to 2-simplex)', fontsize=10)
+    axes[1, 1].set_ylabel('Second Coordinate (tangent to 2-simplex)', fontsize=10)
+    axes[1, 1].grid(True, alpha=0.3)
+    plt.colorbar(scatter4, ax=axes[1, 1], label='Sequence Position')
+    
+    # Add overall title and explanation
+    fig.suptitle('SAE Latent Activations vs Theoretical Belief State Projections\n(Colored by Sequence Position)', fontsize=16, y=0.98)
+    fig.text(0.5, 0.02, 'Color represents position in sequence: Dark (position 0) to Bright (position 11)', 
+             ha='center', fontsize=12, style='italic')
+    
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.94, bottom=0.06)
+    
+    # Save the plot
+    output_path = 'play/plots/sae_vs_theoretical_position_colored.png'
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Position-colored comparison plot saved to {output_path}")
+    
+    plt.show()
+
+
 def main():
     """Main function to run the SAE analysis."""
     print("=== SAE Feature Activation Analysis ===\n")
@@ -470,6 +564,10 @@ def main():
     # Create comparison plots
     create_comparison_plots(sae_0_activations, sae_1_activations,
                           constrained_projections, regular_projections, sequences)
+    
+    # Create position-colored plots
+    create_position_colored_plots(sae_0_activations, sae_1_activations,
+                                constrained_projections, regular_projections, sequences)
     
     print("\n=== Analysis Complete ===")
 
