@@ -30,7 +30,7 @@ from data.mess3 import mess3
 from play.utils import uniform_centered_projection
 
 
-def load_gpt_model(checkpoint_path: str = "checkpoints/mess3_12_64x1") -> GPT:
+def load_gpt_model(checkpoint_path: str) -> GPT:
     """
     Load the GPT model from the specified checkpoint directory.
     
@@ -303,6 +303,84 @@ def compute_regular_belief_projections(sequences: List[List[int]]) -> np.ndarray
     return projections
 
 
+def find_optimal_transformation(ae_data: np.ndarray, theoretical_data: np.ndarray) -> Tuple[np.ndarray, float, np.ndarray, dict]:
+    """
+    Find optimal linear transformation (rotation/reflection + scaling + translation) to align AE data with theoretical data.
+    Uses orthogonal Procrustes analysis allowing reflections.
+    
+    Args:
+        ae_data: Array of shape (N, 2) containing AE coordinates
+        theoretical_data: Array of shape (N, 2) containing theoretical projections
+        
+    Returns:
+        Tuple of (orthogonal_matrix, scale, translation, metrics)
+        - orthogonal_matrix: 2x2 orthogonal matrix (rotation or reflection)
+        - scale: scalar scaling factor
+        - translation: 2D translation vector
+        - metrics: dictionary with alignment quality metrics
+    """
+    # Center both datasets
+    ae_centered = ae_data - np.mean(ae_data, axis=0)
+    theoretical_centered = theoretical_data - np.mean(theoretical_data, axis=0)
+    
+    # Compute cross-covariance matrix
+    H = ae_centered.T @ theoretical_centered
+    
+    # SVD decomposition
+    U, S, Vt = np.linalg.svd(H)
+    
+    # Optimal orthogonal matrix (allows reflections)
+    Q = U @ Vt
+    
+    # Apply orthogonal transformation to centered AE data
+    ae_transformed = ae_centered @ Q.T
+    
+    # Find optimal scaling using least squares
+    # ||s * ae_transformed - theoretical_centered||^2
+    numerator = np.sum(ae_transformed * theoretical_centered)
+    denominator = np.sum(ae_transformed * ae_transformed)
+    optimal_scale = numerator / denominator if denominator > 0 else 1.0
+    
+    # Find optimal translation (centroids after scaling and rotation)
+    theoretical_centroid = np.mean(theoretical_data, axis=0)
+    ae_centroid = np.mean(ae_data, axis=0)
+    optimal_translation = theoretical_centroid - optimal_scale * (Q @ ae_centroid)
+    
+    # Compute alignment metrics
+    aligned_ae = optimal_scale * (ae_data @ Q.T) + optimal_translation
+    distances = np.linalg.norm(aligned_ae - theoretical_data, axis=1)
+    
+    metrics = {
+        'rmse': np.sqrt(np.mean(distances**2)),
+        'mean_distance': np.mean(distances),
+        'max_distance': np.max(distances),
+        'determinant': np.linalg.det(Q),
+        'is_reflection': np.linalg.det(Q) < 0,
+        'correlation_x': np.corrcoef(aligned_ae[:, 0], theoretical_data[:, 0])[0, 1],
+        'correlation_y': np.corrcoef(aligned_ae[:, 1], theoretical_data[:, 1])[0, 1],
+        'original_rmse': np.sqrt(np.mean(np.linalg.norm(ae_data - theoretical_data, axis=1)**2))
+    }
+    
+    return Q, optimal_scale, optimal_translation, metrics
+
+
+def align_ae_to_theoretical(ae_data: np.ndarray, orthogonal_matrix: np.ndarray, 
+                           scale: float, translation: np.ndarray) -> np.ndarray:
+    """
+    Apply the optimal transformation to align AE data with theoretical predictions.
+    
+    Args:
+        ae_data: Array of shape (N, 2) containing AE coordinates
+        orthogonal_matrix: 2x2 orthogonal transformation matrix
+        scale: scalar scaling factor
+        translation: 2D translation vector
+        
+    Returns:
+        Aligned AE data of shape (N, 2)
+    """
+    return scale * (ae_data @ orthogonal_matrix.T) + translation
+
+
 def compute_alignment_metrics(sae_coords: np.ndarray, theoretical_coords: np.ndarray) -> Dict:
     """
     Compute alignment metrics between SAE coordinates and theoretical projections.
@@ -339,16 +417,25 @@ def create_comparison_plots(sae_0_coords: np.ndarray, sae_1_coords: np.ndarray,
                           constrained_proj: np.ndarray, regular_proj: np.ndarray,
                           sequences: List[List[int]]):
     """
-    Create comparison plots showing SAE activations vs theoretical projections.
+    Create comparison plots showing AE activations vs theoretical projections with alignment analysis.
     
     Args:
-        sae_0_coords: SAE.0 feature coordinates
-        sae_1_coords: SAE.1 feature coordinates  
+        sae_0_coords: AE.0 feature coordinates
+        sae_1_coords: AE.1 feature coordinates  
         constrained_proj: Constrained belief state projections
         regular_proj: Regular belief state projections
         sequences: Original sequences for belief state colors
     """
-    print("Creating comparison plots...")
+    print("Creating comparison plots with alignment analysis...")
+    
+    # Compute optimal transformations
+    print("Computing optimal transformations...")
+    Q_0, scale_0, trans_0, metrics_0 = find_optimal_transformation(sae_0_coords, constrained_proj)
+    Q_1, scale_1, trans_1, metrics_1 = find_optimal_transformation(sae_1_coords, regular_proj)
+    
+    # Apply transformations
+    sae_0_aligned = align_ae_to_theoretical(sae_0_coords, Q_0, scale_0, trans_0)
+    sae_1_aligned = align_ae_to_theoretical(sae_1_coords, Q_1, scale_1, trans_1)
     
     # Compute belief states for coloring
     x = 0.15
@@ -377,33 +464,35 @@ def create_comparison_plots(sae_0_coords: np.ndarray, sae_1_coords: np.ndarray,
     constrained_colors = np.array(constrained_belief_states)
     regular_colors = np.array(regular_belief_states)
     
-    # Create four-panel plot
-    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
+    # Create six-panel plot (3 rows, 2 columns)
+    fig, axes = plt.subplots(3, 2, figsize=(16, 24))
     
     scatter_params = {'alpha': 0.6, 's': 8, 'edgecolors': 'black', 'linewidth': 0.05}
     
-    # Panel (0,0): SAE.0 activations
+    # Row 1: Original AE activations
+    # Panel (0,0): AE.0 activations
     axes[0, 0].scatter(sae_0_coords[:, 0], sae_0_coords[:, 1], 
                       c=constrained_colors, **scatter_params)
-    axes[0, 0].set_title('SAE.0 Latent Activations\n(resid_mid → constrained belief states)', fontsize=12)
-    axes[0, 0].set_xlabel('SAE.0 Feature 1', fontsize=10)
-    axes[0, 0].set_ylabel('SAE.0 Feature 2', fontsize=10)
+    axes[0, 0].set_title('Original AE.0 Latent Activations\n(resid_mid → constrained belief states)', fontsize=12)
+    axes[0, 0].set_xlabel('AE.0 Feature 1', fontsize=10)
+    axes[0, 0].set_ylabel('AE.0 Feature 2', fontsize=10)
     axes[0, 0].grid(True, alpha=0.3)
     
-    # Panel (0,1): Constrained belief state projections
-    axes[0, 1].scatter(constrained_proj[:, 0], constrained_proj[:, 1],
-                      c=constrained_colors, **scatter_params)
-    axes[0, 1].set_title('Theoretical: Constrained Belief States\n(Uniform-Centered Projection)', fontsize=12)
-    axes[0, 1].set_xlabel('First Coordinate (tangent to 2-simplex)', fontsize=10)
-    axes[0, 1].set_ylabel('Second Coordinate (tangent to 2-simplex)', fontsize=10)
+    # Panel (0,1): AE.1 activations
+    axes[0, 1].scatter(sae_1_coords[:, 0], sae_1_coords[:, 1],
+                      c=regular_colors, **scatter_params)
+    axes[0, 1].set_title('Original AE.1 Latent Activations\n(resid_post → regular belief states)', fontsize=12)
+    axes[0, 1].set_xlabel('AE.1 Feature 1', fontsize=10)
+    axes[0, 1].set_ylabel('AE.1 Feature 2', fontsize=10)
     axes[0, 1].grid(True, alpha=0.3)
     
-    # Panel (1,0): SAE.1 activations
-    axes[1, 0].scatter(sae_1_coords[:, 0], sae_1_coords[:, 1],
-                      c=regular_colors, **scatter_params)
-    axes[1, 0].set_title('SAE.1 Latent Activations\n(resid_post → regular belief states)', fontsize=12)
-    axes[1, 0].set_xlabel('SAE.1 Feature 1', fontsize=10)
-    axes[1, 0].set_ylabel('SAE.1 Feature 2', fontsize=10)
+    # Row 2: Theoretical projections
+    # Panel (1,0): Constrained belief state projections
+    axes[1, 0].scatter(constrained_proj[:, 0], constrained_proj[:, 1],
+                      c=constrained_colors, **scatter_params)
+    axes[1, 0].set_title('Theoretical: Constrained Belief States\n(Uniform-Centered Projection)', fontsize=12)
+    axes[1, 0].set_xlabel('First Coordinate (tangent to 2-simplex)', fontsize=10)
+    axes[1, 0].set_ylabel('Second Coordinate (tangent to 2-simplex)', fontsize=10)
     axes[1, 0].grid(True, alpha=0.3)
     
     # Panel (1,1): Regular belief state projections
@@ -414,16 +503,51 @@ def create_comparison_plots(sae_0_coords: np.ndarray, sae_1_coords: np.ndarray,
     axes[1, 1].set_ylabel('Second Coordinate (tangent to 2-simplex)', fontsize=10)
     axes[1, 1].grid(True, alpha=0.3)
     
+    # Row 3: Aligned AE activations
+    # Panel (2,0): Aligned AE.0 activations
+    transform_type_0 = "Reflection" if metrics_0['is_reflection'] else "Rotation"
+    axes[2, 0].scatter(sae_0_aligned[:, 0], sae_0_aligned[:, 1],
+                      c=constrained_colors, **scatter_params)
+    axes[2, 0].set_title(f'Aligned AE.0 Latent Activations\n({transform_type_0}, RMSE: {metrics_0["rmse"]:.4f})', fontsize=12)
+    axes[2, 0].set_xlabel('Aligned AE.0 Feature 1', fontsize=10)
+    axes[2, 0].set_ylabel('Aligned AE.0 Feature 2', fontsize=10)
+    axes[2, 0].grid(True, alpha=0.3)
+    
+    # Panel (2,1): Aligned AE.1 activations
+    transform_type_1 = "Reflection" if metrics_1['is_reflection'] else "Rotation"
+    axes[2, 1].scatter(sae_1_aligned[:, 0], sae_1_aligned[:, 1],
+                      c=regular_colors, **scatter_params)
+    axes[2, 1].set_title(f'Aligned AE.1 Latent Activations\n({transform_type_1}, RMSE: {metrics_1["rmse"]:.4f})', fontsize=12)
+    axes[2, 1].set_xlabel('Aligned AE.1 Feature 1', fontsize=10)
+    axes[2, 1].set_ylabel('Aligned AE.1 Feature 2', fontsize=10)
+    axes[2, 1].grid(True, alpha=0.3)
+    
     # Add overall title and color explanation
-    fig.suptitle('SAE Latent Activations vs Theoretical Belief State Projections', fontsize=16, y=0.98)
+    fig.suptitle('AE Latent Activations vs Theoretical Belief State Projections with Optimal Alignment', fontsize=16, y=0.98)
     fig.text(0.5, 0.02, 'Color represents belief state: Red=State 0, Green=State 1, Blue=State 2', 
              ha='center', fontsize=12, style='italic')
     
     plt.tight_layout()
     plt.subplots_adjust(top=0.94, bottom=0.06)
     
+    # Print alignment results
+    print(f"\n=== Alignment Results ===")
+    print(f"AE.0 vs Constrained Belief States:")
+    print(f"  Transformation: {transform_type_0} (det = {metrics_0['determinant']:.4f})")
+    print(f"  Scale factor: {scale_0:.4f}")
+    print(f"  Translation: [{trans_0[0]:.4f}, {trans_0[1]:.4f}]")
+    print(f"  RMSE improvement: {metrics_0['original_rmse']:.4f} → {metrics_0['rmse']:.4f}")
+    print(f"  Correlations: X={metrics_0['correlation_x']:.4f}, Y={metrics_0['correlation_y']:.4f}")
+    
+    print(f"\nAE.1 vs Regular Belief States:")
+    print(f"  Transformation: {transform_type_1} (det = {metrics_1['determinant']:.4f})")
+    print(f"  Scale factor: {scale_1:.4f}")
+    print(f"  Translation: [{trans_1[0]:.4f}, {trans_1[1]:.4f}]")
+    print(f"  RMSE improvement: {metrics_1['original_rmse']:.4f} → {metrics_1['rmse']:.4f}")
+    print(f"  Correlations: X={metrics_1['correlation_x']:.4f}, Y={metrics_1['correlation_y']:.4f}")
+    
     # Save the plot
-    output_path = 'play/plots/sae_vs_theoretical_comparison.png'
+    output_path = 'play/plots/ae_vs_theoretical_comparison.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"Comparison plot saved to {output_path}")
     
@@ -437,7 +561,7 @@ def main():
     # Configuration
     block_size = 12  # Total length including BOS tokens
     gpt_checkpoint = "checkpoints/mess3_12_64x1"
-    sae_checkpoint = "checkpoints/jsae_block.mess3_12_64x1_2feat_dense_no_last"
+    sae_checkpoint = "checkpoints/jsae_block.mess3_12_64x1_2feat_dense_play"
     
     # Load models
     gpt_model = load_gpt_model(gpt_checkpoint)
@@ -458,12 +582,12 @@ def main():
     print("\n=== Alignment Metrics ===")
     
     metrics_0 = compute_alignment_metrics(sae_0_activations, constrained_projections)
-    print(f"SAE.0 vs Constrained Belief States:")
+    print(f"AE.0 vs Constrained Belief States:")
     for key, value in metrics_0.items():
         print(f"  {key}: {value:.4f}")
     
     metrics_1 = compute_alignment_metrics(sae_1_activations, regular_projections)
-    print(f"\nSAE.1 vs Regular Belief States:")
+    print(f"\nAE.1 vs Regular Belief States:")
     for key, value in metrics_1.items():
         print(f"  {key}: {value:.4f}")
     

@@ -26,25 +26,25 @@ from data.integer_data import prepare_integer_dataset
 
 def generate_all_sequences(block_size: int) -> List[List[int]]:
     """
-    Generate all possible sequences of length block_size with BOS token 3.
-    Format: [3, *, *, *, ...] where * ∈ {0, 1, 2}
+    Generate all possible sequences of length block_size with BOS and EOS tokens.
+    Format: [3, *, *, *, ..., 3] where * ∈ {0, 1, 2}
     
     Args:
-        block_size: Total length of each sequence including BOS token
+        block_size: Total length of each sequence including BOS and EOS tokens
         
     Returns:
         List of sequences, each of length block_size
-        Total sequences returned: 3^(block_size-1)
+        Total sequences returned: 3^(block_size-2)
     """
     print(f"Generating all possible sequences of length {block_size}...")
     sequences = []
     
-    # Generate all combinations of (block_size-1) positions with values {0, 1, 2}
-    for combination in itertools.product([0, 1, 2], repeat=block_size-1):
-        sequence = [3] + list(combination)  # BOS token 3 followed by the combination
+    # Generate all combinations of (block_size-2) positions with values {0, 1, 2}
+    for combination in itertools.product([0, 1, 2], repeat=block_size-2):
+        sequence = [3] + list(combination) + [3]  # BOS token 3, combination, EOS token 3
         sequences.append(sequence)
     
-    expected_count = 3 ** (block_size - 1)
+    expected_count = 3 ** (block_size - 2)
     print(f"Generated {len(sequences)} sequences (expected: {expected_count})")
     
     # Validate count
@@ -171,7 +171,7 @@ def main():
     print("=== All Sequences Dataset Generation ===")
     print(f"Block size: {args.block_size}")
     print(f"Format: {args.format}")
-    print(f"Expected sequences: {3 ** (args.block_size - 1)}")
+    print(f"Expected sequences: {3 ** (args.block_size - 2)}")
     print()
     
     # Create dataset

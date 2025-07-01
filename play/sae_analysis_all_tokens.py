@@ -175,19 +175,19 @@ def capture_sae_activations(gpt_model: GPT, sae_weights: Tuple[Dict, Dict],
         # Apply SAE encoders (assuming they have W_enc and b_enc)
         # SAE.0 (constrained belief states)
         if 'W_enc' in sae_0_weights and 'b_enc' in sae_0_weights:
-            sae_0_features = F.relu((resid_mid_flat - sae_0_weights.get('b_dec', 0)) @ sae_0_weights['W_enc'] + sae_0_weights['b_enc'])
+            sae_0_features = (resid_mid_flat - sae_0_weights.get('b_dec', 0)) @ sae_0_weights['W_enc'] + sae_0_weights['b_enc']
         else:
             # Fallback: use decoder weights transposed
             W_enc_0 = sae_0_weights['W_dec'].T
-            sae_0_features = F.relu(resid_mid_flat @ W_enc_0)
+            sae_0_features = resid_mid_flat @ W_enc_0
         
         # SAE.1 (regular belief states)  
         if 'W_enc' in sae_1_weights and 'b_enc' in sae_1_weights:
-            sae_1_features = F.relu((resid_post_flat - sae_1_weights.get('b_dec', 0)) @ sae_1_weights['W_enc'] + sae_1_weights['b_enc'])
+            sae_1_features = (resid_post_flat - sae_1_weights.get('b_dec', 0)) @ sae_1_weights['W_enc'] + sae_1_weights['b_enc']
         else:
             # Fallback: use decoder weights transposed
             W_enc_1 = sae_1_weights['W_dec'].T
-            sae_1_features = F.relu(resid_post_flat @ W_enc_1)
+            sae_1_features = resid_post_flat @ W_enc_1
         
         all_sae_0_activations.append(sae_0_features.cpu().numpy())
         all_sae_1_activations.append(sae_1_features.cpu().numpy())
@@ -436,7 +436,7 @@ def create_comparison_plots(sae_0_coords: np.ndarray, sae_1_coords: np.ndarray,
     plt.subplots_adjust(top=0.94, bottom=0.06)
     
     # Save the plot
-    output_path = 'play/plots/sae_vs_theoretical_comparison.png'
+    output_path = 'play/plots/sae_vs_theoretical_comparison_all_tokens.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"Comparison plot saved to {output_path}")
     
@@ -517,7 +517,7 @@ def create_position_colored_plots(sae_0_coords: np.ndarray, sae_1_coords: np.nda
     plt.subplots_adjust(top=0.94, bottom=0.06)
     
     # Save the plot
-    output_path = 'play/plots/sae_vs_theoretical_position_colored.png'
+    output_path = 'play/plots/sae_vs_theoretical_position_colored_all_tokens.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"Position-colored comparison plot saved to {output_path}")
     
@@ -531,7 +531,7 @@ def main():
     # Configuration
     block_size = 12  # Total length including BOS tokens
     gpt_checkpoint = "checkpoints/mess3_12_64x1"
-    sae_checkpoint = "checkpoints/jsae_block.mess3_12_64x1_2feat_dense_no_last"
+    sae_checkpoint = "checkpoints/jsae_block.mess3_12_64x1_2feat_dense_play"
     
     # Load models
     gpt_model = load_gpt_model(gpt_checkpoint)

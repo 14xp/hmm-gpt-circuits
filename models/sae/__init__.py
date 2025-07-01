@@ -33,7 +33,8 @@ class SAELossComponents:
         aux: Optional[torch.Tensor] = None,
     ):
         # Very hacky fix, be careful with this
-        self.reconstruct = (x - x_reconstructed).pow(2).sum(dim=-1)[:, :-1].mean()
+        # self.reconstruct = (x - x_reconstructed).pow(2).sum(dim=-1)[:, 1:-3].mean()
+        self.reconstruct = (x[:, 1:-1, :] - x_reconstructed[:, 1:-1, :]).pow(2).sum(dim=-1).mean()
         self.sparsity = sparsity
         self.aux = aux if aux is not None else torch.tensor(0.0, device=x.device)
         self.l0 = (feature_magnitudes != 0).float().sum(dim=-1).mean()
