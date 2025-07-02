@@ -21,6 +21,7 @@ class GPTConfig(Config):
     norm_strategy: NormalizationStrategy = NormalizationStrategy.LAYER_NORM
     alpha_attn: float = 2.0 # DyT, only used during training
     alpha_mlp: float = 2.0 # DyT, only used during training
+    tie_weights: bool = True  # whether to tie embedding and unembedding weights
 
     @property
     def tokenizer(self) -> Tokenizer:
@@ -42,7 +43,7 @@ class GPTConfig(Config):
         Only export integer fields (exclude name and device)
         """
         # TODO: Is dangerous, should explicitly whitelist fields
-        white_list = ['block_size', 'vocab_size', 'n_layer', 'n_head', 'n_embd', 'norm_strategy']
+        white_list = ['block_size', 'vocab_size', 'n_layer', 'n_head', 'n_embd', 'norm_strategy', 'tie_weights']
         return {k: v for (k, v) in fields if k in white_list}
     
 
@@ -105,5 +106,14 @@ gpt_options: dict[str, GPTConfig] = map_options(
         n_layer=1,
         n_head=1,
         n_embd=64,
+    ),
+    GPTConfig(
+        name="mess3_12_64x1_untied",
+        block_size=12,
+        vocab_size=4,
+        n_layer=1,
+        n_head=1,
+        n_embd=64,
+        tie_weights=False,
     ),
 )#type: ignore

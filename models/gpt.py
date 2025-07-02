@@ -159,8 +159,9 @@ class GPT(nn.Module):
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
-        # weight sharing scheme
-        self.transformer.wte.weight = self.lm_head.weight
+        # conditional weight sharing scheme
+        if config.tie_weights:
+            self.transformer.wte.weight = self.lm_head.weight
 
         # init params
         for name, module in self.named_modules():
