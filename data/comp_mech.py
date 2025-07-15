@@ -28,6 +28,13 @@ def belief_update(transition_matrix: np.ndarray, observation: int, belief: np.nd
     updated = belief @ transition
     return updated / np.sum(updated)
 
+def belief_update_general(transition_matrix: np.ndarray, observation: int, belief: np.ndarray, one_vector: np.ndarray) -> np.ndarray:
+    """Updates the belief state using the transition matrix."""
+    transition = transition_matrix[observation]
+    updated = belief @ transition
+    normalisation = (updated @ one_vector).item()
+    return updated / normalisation
+
 def belief_to_token_distribution(transition_matrix: np.ndarray, belief: np.ndarray) -> np.ndarray:
     """Converts belief state to token distribution."""
     # Compute the token distribution by contracting belief with transition matrix and marginalizing over output states
