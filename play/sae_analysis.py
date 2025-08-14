@@ -560,8 +560,8 @@ def main():
     
     # Configuration
     block_size = 12  # Total length including BOS tokens
-    gpt_checkpoint = "checkpoints/mess3_12_64x1"
-    sae_checkpoint = "checkpoints/jsae_block.mess3_12_64x1_2feat_dense_play"
+    gpt_checkpoint = "checkpoints/mess3_12_64x1_untied"
+    sae_checkpoint = "checkpoints/jsae_block.mess3_12_64x1_untied"
     
     # Load models
     gpt_model = load_gpt_model(gpt_checkpoint)

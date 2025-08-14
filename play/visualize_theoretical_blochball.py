@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import matplotlib.pyplot as plt
 
-from data.comp_mech import belief_update, constrained_belief_update, stationary_distribution
+from data.comp_mech import belief_update, belief_update_general, stationary_distribution
 from data.blochball import bloch
 
 
@@ -25,10 +25,10 @@ def generate_sequences(block_size: int):
     return sequences
 
 
-def compute_belief_projections(sequences, use_constrained=True):
+def compute_belief_projections(sequences: list, one_vector: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Compute belief state projections."""
     a = 1.0
-    b = np.sqrt(10)
+    b = np.sqrt(51)
     transition_matrix = bloch(a, b)
     initial_belief = stationary_distribution(transition_matrix)
     print(f"Initial belief state: {initial_belief}")
@@ -39,10 +39,7 @@ def compute_belief_projections(sequences, use_constrained=True):
         current_belief = initial_belief.copy()
         for pos in range(1, len(sequence) - 1):
             observation = sequence[pos]
-            if use_constrained:
-                current_belief = constrained_belief_update(transition_matrix, observation, current_belief, initial_belief)
-            else:
-                current_belief = belief_update(transition_matrix, observation, current_belief)
+            current_belief = belief_update_general(transition_matrix, observation, current_belief, one_vector)
             all_belief_states.append(current_belief.copy())
     
     if len(all_belief_states) == 0:
@@ -50,60 +47,54 @@ def compute_belief_projections(sequences, use_constrained=True):
         return np.array([]).reshape(0, 2), np.array([]).reshape(0, 3)
     
     belief_states_array = np.array(all_belief_states)
+
+    # Create change of basis matrix with one_vector as first basis vector
+    one_vector_normalized = one_vector / np.linalg.norm(one_vector)
     
-    # Use only the second two coordinates (indices 1 and 2) normalized by the first coordinate
-    first_coord = belief_states_array[:, 0]
-    second_coord = belief_states_array[:, 1]
-    third_coord = belief_states_array[:, 2]
+    # Create matrix with one_vector as first column and identity for remaining columns
+    dim = one_vector.shape[0]
+    A = np.column_stack([one_vector_normalized.flatten(), np.eye(dim)])
     
-    # Normalize by first coordinate (avoid division by zero)
-    normalized_second = np.divide(second_coord, first_coord, out=np.zeros_like(second_coord), where=first_coord!=0)
-    normalized_third = np.divide(third_coord, first_coord, out=np.zeros_like(third_coord), where=first_coord!=0)
+    # Use QR decomposition to get orthonormal basis (Gram-Schmidt)
+    Q, _ = np.linalg.qr(A)
+    basis_matrix = Q[:, :dim]
     
-    projections = np.column_stack([normalized_second, normalized_third])
+    # Transform belief states to new basis
+    belief_states_new_basis = (basis_matrix.T @ belief_states_array.T).T
     
+    # Extract 2D coordinates directly (indices 1 and 2, skipping the one_vector direction)
+    projections = belief_states_new_basis[:, [1, 2]]
+
     return projections, belief_states_array
 
 
 def main():
     """Main function."""
     sequences = generate_sequences(10)
-    
-    constrained_proj, constrained_states = compute_belief_projections(sequences, use_constrained=True)
-    regular_proj, regular_states = compute_belief_projections(sequences, use_constrained=False)
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    one_vector = np.array([[1], [0], [0]])
+
+    belief_proj, belief_states = compute_belief_projections(sequences, one_vector)
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     
     scatter_params = {'alpha': 0.3, 's': 8, 'edgecolors': 'black', 'linewidth': 0.05}
     
     # Create color maps that handle negative values by shifting to [0,1] range
     # Use the first coordinate (x-axis) for coloring
-    constrained_x = constrained_proj[:, 0]
-    regular_x = regular_proj[:, 0]
+    belief_x = belief_proj[:, 0]
     
     # Handle edge cases where min equals max (constant values)
-    constrained_range = constrained_x.max() - constrained_x.min()
-    if constrained_range == 0:
-        constrained_colors = np.zeros_like(constrained_x)
+    belief_range = belief_x.max() - belief_x.min()
+    if belief_range == 0:
+        belief_colors = np.zeros_like(belief_x)
     else:
-        constrained_colors = (constrained_x - constrained_x.min()) / constrained_range
-    
-    regular_range = regular_x.max() - regular_x.min()
-    if regular_range == 0:
-        regular_colors = np.zeros_like(regular_x)
-    else:
-        regular_colors = (regular_x - regular_x.min()) / regular_range
+        belief_colors = (belief_x - belief_x.min()) / belief_range
     
     # Handle empty arrays
-    if len(constrained_proj) > 0:
-        ax1.scatter(constrained_proj[:, 0], constrained_proj[:, 1], c=constrained_colors, **scatter_params)
-    ax1.set_title('Constrained Belief States')
-    ax1.grid(True, alpha=0.3)
-    
-    if len(regular_proj) > 0:
-        ax2.scatter(regular_proj[:, 0], regular_proj[:, 1], c=regular_colors, **scatter_params)
-    ax2.set_title('Regular Belief States')
-    ax2.grid(True, alpha=0.3)
+    if len(belief_proj) > 0:
+        ax.scatter(belief_proj[:, 0], belief_proj[:, 1], c=belief_colors, **scatter_params)
+    ax.set_title('Belief States')
+    ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     

@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import matplotlib.pyplot as plt
 
-from data.comp_mech import belief_update, constrained_belief_update, stationary_distribution
+from data.comp_mech import belief_update, logit_belief_update, constrained_belief_update, stationary_distribution
 from data.mess3 import mess3
 from play.utils import uniform_centered_projection
 
@@ -26,7 +26,7 @@ def generate_sequences(block_size: int):
     return sequences
 
 
-def compute_belief_projections(sequences, use_constrained=True):
+def compute_belief_projections(sequences, update_type):
     """Compute belief state projections."""
     x = 0.15
     a = 0.6
@@ -39,25 +39,30 @@ def compute_belief_projections(sequences, use_constrained=True):
         current_belief = initial_belief.copy()
         for pos in range(1, len(sequence) - 1):
             observation = sequence[pos]
-            if use_constrained:
+            if update_type == 'constrained':
                 current_belief = constrained_belief_update(transition_matrix, observation, current_belief, initial_belief)
-            else:
+            elif update_type == 'regular':
                 current_belief = belief_update(transition_matrix, observation, current_belief)
+            elif update_type == 'logit':
+                current_belief = logit_belief_update(transition_matrix, observation, current_belief)
+            else:
+                raise ValueError(f"Invalid update type: {update_type}")
             all_belief_states.append(current_belief.copy())
     
     belief_states_array = np.array(all_belief_states)
     projections = uniform_centered_projection(belief_states_array)
     return projections, belief_states_array
 
-
 def main():
     """Main function."""
-    sequences = generate_sequences(10)
+    block_size = 10
+    sequences = generate_sequences(block_size)
     
-    constrained_proj, constrained_states = compute_belief_projections(sequences, use_constrained=True)
-    regular_proj, regular_states = compute_belief_projections(sequences, use_constrained=False)
+    constrained_proj, constrained_states = compute_belief_projections(sequences, update_type='constrained')
+    regular_proj, regular_states = compute_belief_projections(sequences, update_type='regular')
+    logit_proj, logit_states = compute_belief_projections(sequences, update_type='logit')
     
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12, 5))
     
     scatter_params = {'alpha': 0.6, 's': 8, 'edgecolors': 'black', 'linewidth': 0.05}
     
@@ -68,6 +73,10 @@ def main():
     ax2.scatter(regular_proj[:, 0], regular_proj[:, 1], c=regular_states, **scatter_params)
     ax2.set_title('Regular Belief States')
     ax2.grid(True, alpha=0.3)
+    
+    ax3.scatter(logit_proj[:, 0], logit_proj[:, 1], c=logit_states, **scatter_params)
+    ax3.set_title('Logit Belief States')
+    ax3.grid(True, alpha=0.3)
     
     plt.tight_layout()
     
