@@ -338,4 +338,12 @@ options: dict[str, SAETrainingConfig] = map_options(
             sparsity=(0.0,),  # One coefficient per layer (zero Jacobian coefficient)
         ),
     ),
+    SAETrainingConfig(
+        name="jsae_block.mess3_12_64x1_untied",
+        sae_config=sae_options["jsae_block.mess3_12_64x1_untied"],
+        **mess3_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.0,),  # One coefficient per layer (zero Jacobian coefficient)
+        ),
+    ),
 )

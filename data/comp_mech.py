@@ -1,5 +1,13 @@
 import numpy as np
 from collections import deque
+from tqdm import tqdm
+
+def softmax(x: np.ndarray) -> np.ndarray:
+    """Compute softmax values for each set of scores in x."""
+    # Subtract the maximum value for numerical stability
+    x_shifted = x - np.max(x, axis=-1, keepdims=True)
+    exp_x = np.exp(x_shifted)
+    return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
 
 def stationary_distribution(transition_matrix: np.ndarray) -> np.ndarray:
     """Calculates the stationary distribution of the transition matrix."""
@@ -28,6 +36,12 @@ def belief_update(transition_matrix: np.ndarray, observation: int, belief: np.nd
     updated = belief @ transition
     return updated / np.sum(updated)
 
+def logit_belief_update(transition_matrix: np.ndarray, observation: int, belief: np.ndarray) -> np.ndarray:
+    """Updates the belief state using the transition matrix."""
+    transition = transition_matrix[observation]
+    updated =  belief @ transition
+    return updated
+
 def belief_update_general(transition_matrix: np.ndarray, observation: int, belief: np.ndarray, one_vector: np.ndarray) -> np.ndarray:
     """Updates the belief state using the transition matrix."""
     transition = transition_matrix[observation]
@@ -39,6 +53,14 @@ def belief_to_token_distribution(transition_matrix: np.ndarray, belief: np.ndarr
     """Converts belief state to token distribution."""
     # Compute the token distribution by contracting belief with transition matrix and marginalizing over output states
     return np.einsum('i,kij->k', belief, transition_matrix)
+
+def belief_to_token_logits(transition_matrix: np.ndarray, belief: np.ndarray, final_state: np.ndarray) -> np.ndarray:
+    """Converts belief state to token distribution."""
+    # Compute the token logits by contracting belief with transition matrix and marginalizing over output states
+    marginalised_transition = np.einsum('i,kij->kj', belief, transition_matrix) 
+    logits = marginalised_transition @ final_state
+
+    return logits 
 
 def sample_tokens(transition_matrix: np.ndarray, initial_belief: np.ndarray, n_samples: int, n_tokens: int, seed: int = 42) -> np.ndarray:
     """Samples token sequences given a transition matrix and initial belief.
@@ -73,6 +95,46 @@ def sample_tokens(transition_matrix: np.ndarray, initial_belief: np.ndarray, n_s
             
             # Update belief with the sampled token
             current_belief = belief_update(transition_matrix, token, current_belief)
+        
+        samples.append(np.array(sample_tokens))
+    
+    return np.array(samples)
+
+
+def logit_sample_tokens(transition_matrix: np.ndarray, initial_belief: np.ndarray, final_state: np.ndarray, n_samples: int, n_tokens: int, seed: int = 42) -> np.ndarray:
+    """Samples token sequences given a transition matrix and initial belief.
+    
+    Args:
+        transition_matrix: Transition matrix of shape (n_vocab, n_states, n_states)
+        initial_belief: Initial belief state of shape (n_states,)
+        n_samples: Number of independent samples to generate
+        n_tokens: Number of tokens to generate per sample
+        seed: Random seed for reproducibility (default: 42)
+        
+    Returns:
+        Array of shape (n_samples, n_tokens) containing sampled token sequences
+    """
+    rng = np.random.default_rng(seed)
+    n_vocab = transition_matrix.shape[0]
+    
+    samples = []
+    
+    for sample_idx in tqdm(range(n_samples), desc="Generating samples"):
+        current_belief = initial_belief
+        bos_token = n_vocab # Assuming the last token is the BOS token
+        sample_tokens = [bos_token]
+        
+        for token_idx in range(n_tokens - 1):
+            # Get token distribution from current belief
+            token_logits = belief_to_token_logits(transition_matrix, current_belief, final_state) 
+            token_dist = softmax(token_logits)
+            
+            # Sample a token from the distribution
+            token = rng.choice(n_vocab, p=token_dist)
+            sample_tokens.append(token)
+            
+            # Update belief with the sampled token
+            current_belief = logit_belief_update(transition_matrix, token, current_belief)
         
         samples.append(np.array(sample_tokens))
     
